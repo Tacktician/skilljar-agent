@@ -139,6 +139,46 @@ class SkillJarClient:
     def search_users(self, email: str) -> list[dict]:
         return self.get_all_pages("/users", params={"email": email})
 
+    # ── Course / Lesson writes ───────────────────────────────
+
+    def create_course(self, title: str, description: str = "", **kwargs) -> dict:
+        """Create a new course. Returns the created course object with ID."""
+        payload = {"title": title, "description": description, **kwargs}
+        result = self.post("/courses", payload)
+        self.cache.clear()  # Invalidate course catalog cache
+        return result
+
+    def update_course(self, course_id: str, **fields) -> dict:
+        """Update course metadata (title, description, etc.)."""
+        result = self.put(f"/courses/{course_id}", fields)
+        self.cache.clear()
+        return result
+
+    def create_lesson(
+        self,
+        course_id: str,
+        title: str,
+        body: str = "",
+        lesson_type: str = "html",
+        **kwargs,
+    ) -> dict:
+        """Create a new lesson in a course. `body` is the HTML content."""
+        payload = {
+            "title": title,
+            "body": body,
+            "lesson_type": lesson_type,
+            **kwargs,
+        }
+        return self.post(f"/courses/{course_id}/lessons", payload)
+
+    def update_lesson(self, course_id: str, lesson_id: str, **fields) -> dict:
+        """Update a lesson's title, body, or other fields."""
+        return self.put(f"/courses/{course_id}/lessons/{lesson_id}", fields)
+
+    def reorder_lessons(self, course_id: str, lesson_ids: list[str]) -> dict:
+        """Set lesson order for a course by providing ordered lesson IDs."""
+        return self.put(f"/courses/{course_id}/lessons/order", {"lesson_ids": lesson_ids})
+
     # ── Cache management ─────────────────────────────────────
 
     def clear_cache(self):
