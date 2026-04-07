@@ -25,6 +25,7 @@ from tools.curriculum.tools import register as register_curriculum
 from tools.analytics.tools import register as register_analytics
 from tools.enrollment.tools import register as register_enrollment
 from tools.classroom.tools import register as register_classroom
+from tools.content.tools import register as register_content
 
 
 # ── Shared client (singleton, reused across all tool calls) ──
@@ -45,6 +46,7 @@ register_curriculum(mcp, get_client)
 register_analytics(mcp, get_client)
 register_enrollment(mcp, get_client)
 register_classroom(mcp, get_client)
+register_content(mcp, get_client)
 
 
 if __name__ == "__main__":
@@ -72,7 +74,8 @@ if __name__ == "__main__":
     print(f"   ├── curriculum  (search_courses, get_course_content, get_course_catalog)")
     print(f"   ├── analytics   (get_enrollment_stats)")
     print(f"   ├── enrollment  (lookup_user, enroll_user)")
-    print(f"   └── classroom   (check_user_access)")
+    print(f"   ├── classroom   (check_user_access)")
+    print(f"   └── content     (create_course, create_lesson_from_html, create_lesson_from_file, batch_create_lessons, update_lesson_content)")
 
     print(f"\n✅ MCP server is running. Waiting for tool calls...")
     print(f"   (This will stay silent until an agent connects. Ctrl+C to stop)")
