@@ -13,6 +13,17 @@ from tools.curriculum.resolver import resolve_courses
 from tools.curriculum.scraper import scrape_course
 
 
+def _course_description_text(course: dict) -> str:
+    parts = []
+    if course.get("short_description"):
+        parts.append(course["short_description"])
+    if course.get("long_description_html"):
+        parts.append(course["long_description_html"])
+    if course.get("description"):
+        parts.append(course["description"])
+    return "\n\n".join(p for p in parts if p)
+
+
 def register(mcp, get_client):
     """
     Mount curriculum tools onto an MCP server instance.
@@ -51,7 +62,7 @@ def register(mcp, get_client):
         result = {
             "course_id": course_id,
             "course_title": full_course.get("title", ""),
-            "course_description": full_course.get("description", ""),
+            "course_description": _course_description_text(full_course),
             "lesson_count": len(lessons),
             "lessons": [
                 {

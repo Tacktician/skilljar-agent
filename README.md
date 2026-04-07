@@ -6,12 +6,37 @@ A modular platform agent for SkillJar — curriculum planning, enrollment analyt
 
 | Domain | Status | Tools | Description |
 |---|---|---|---|
-| **Curriculum** | ✅ Implemented | `search_courses`, `get_course_content`, `get_course_catalog` | Fuzzy course matching, lesson scraping, catalog browsing |
+| **Curriculum** | ✅ Implemented | `search_courses`, `get_course_content`, `get_course_catalog` | Fuzzy course matching, lesson scraping (incl. modular lessons via content-items), catalog browsing |
+| **Content** | ✅ Implemented | `create_course`, `create_lesson_from_html`, `create_lesson_from_file`, `batch_create_lessons`, `update_lesson_content` | Course/lesson writes (⚠️ confirm before use) |
 | **Analytics** | 🔧 Starter | `get_enrollment_stats` | Enrollment counts, completion rates |
 | **Enrollment** | 🔧 Starter | `lookup_user`, `enroll_user` | User lookup, course enrollment (write ops) |
 | **Classroom** | 🔧 Starter | `check_user_access` | ILT support — access checks, sandbox troubleshooting |
 
 Starter tools have working scaffolds against the SkillJar API. Extend them as your needs grow.
+
+## Installation (macOS / Linux)
+
+From the repo root:
+
+```bash
+python3 -m pip install -e ".[cli]"   # CLI + Anthropic; use pip install -e . for MCP-only
+```
+
+After install, the `skilljar-agent` executable is placed in a **scripts directory** that depends on your Python install. On many Macs (e.g. python.org installer), that directory is **not** only `$(python3 -m site --user-base)/bin` — it is often the framework “scripts” path from `sysconfig`. If you see `command not found: skilljar-agent`, add **both** user-site `bin` and the active Python scripts path to `PATH` in `~/.zshrc` or `~/.bashrc`:
+
+```bash
+export PATH="$(python3 -m site --user-base)/bin:$(python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))'):$PATH"
+```
+
+Open a new terminal or run `source ~/.zshrc` (or `~/.bashrc`).
+
+**Fallback** (no PATH change): from the repo directory,
+
+```bash
+PYTHONPATH=src python3 -m cli --help
+```
+
+More detail and troubleshooting: [QUICKSTART.md](QUICKSTART.md).
 
 ## Two Ways to Run
 
@@ -35,10 +60,11 @@ The MCP server provides data tools; your IDE's agent handles reasoning. See [QUI
 
 ### Standalone CLI
 
-**Requires:** `SKILLJAR_API_KEY` + `ANTHROPIC_API_KEY`.
+**Requires:** `SKILLJAR_API_KEY` + `ANTHROPIC_API_KEY`. The CLI checks for `SKILLJAR_API_KEY` before calling SkillJar; planner failures (API, JSON, validation) exit with a clear message.
+
+After installing with `pip install -e ".[cli]"` (see [Installation](#installation-macos--linux) if `skilljar-agent` is not on your `PATH`):
 
 ```bash
-pip install -e ".[cli]"
 skilljar-agent "Refresh the PostAir Weather API course to cover Package Library"
 skilljar-agent --new "Introduction to API Mocking with Postman Mock Servers"
 skilljar-agent --json "Extend the Git integration course"
@@ -53,6 +79,10 @@ src/
 │   ├── cache.py                 # File-based JSON cache with TTL
 │   └── models.py                # Shared Pydantic models
 │
+├── cli/                         # Standalone CLI (skilljar-agent entrypoint)
+│   ├── __init__.py
+│   └── __main__.py
+│
 ├── tools/
 │   ├── curriculum/              # Course planning tools
 │   │   ├── tools.py             # MCP tool definitions
@@ -60,6 +90,9 @@ src/
 │   │   ├── scraper.py           # HTML → structured lesson content
 │   │   ├── planner.py           # LLM planner (CLI mode only)
 │   │   └── models.py            # CurriculumPlan schema
+│   │
+│   ├── content/                 # Course & lesson CRUD (write tools)
+│   │   └── tools.py
 │   │
 │   ├── analytics/               # Enrollment & performance analytics
 │   │   └── tools.py
@@ -69,8 +102,6 @@ src/
 │   │
 │   └── classroom/               # ILT classroom support
 │       └── tools.py
-│
-└── cli.py                       # Standalone CLI entrypoint
 
 mcp_server.py                    # MCP registry — mounts all tool groups
 prompts/
@@ -104,14 +135,20 @@ That's it. Restart your MCP server and the new tools are available.
 
 ## SkillJar API Reference
 
-Auth: HTTP Basic — API key as username, empty password.
+Auth: HTTP Basic — API key as username, empty password. Base URL: `https://api.skilljar.com/v1` (override with `SKILLJAR_DOMAIN`).
+
+The client matches the [published API](https://api.skilljar.com/docs/) / `docs/skilljar-api.yaml`: lessons are under **`/v1/lessons`**, not nested under `/courses/.../lessons`.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /v1/courses` | List published courses |
-| `GET /v1/courses/{id}` | Course metadata |
-| `GET /v1/courses/{id}/lessons` | Lesson list |
-| `GET /v1/courses/{id}/lessons/{id}` | Full lesson with HTML body |
+| `GET /v1/courses` | List courses (paginated) |
+| `GET /v1/courses/{id}` | Course metadata (`short_description`, `long_description_html`, …) |
+| `POST /v1/courses` | Create course (`short_description`, `title`, `enforce_sequential_navigation`, …) |
+| `GET /v1/lessons?course_id={id}` | Lesson list for a course |
+| `GET /v1/lessons/{lesson_id}?course_id={id}` | Lesson detail (`content_html`, `type`, …) |
+| `GET /v1/lessons/{lesson_id}/content-items` | Blocks for modular / multi-part lessons |
+| `POST /v1/lessons` | Create lesson (`content_html`, `type`, `order`, `course_id`, `title`) |
+| `PUT /v1/lessons/{lesson_id}` | Update lesson |
 | `GET /v1/courses/{id}/enrollments` | Enrollment list |
 | `GET /v1/users?email=` | User lookup |
 | `POST /v1/courses/{id}/enrollments` | Enroll a user |

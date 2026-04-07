@@ -13,6 +13,8 @@ import json
 import os
 import sys
 
+import httpx
+
 from core.client import SkillJarClient
 from tools.curriculum.resolver import resolve_courses
 from tools.curriculum.scraper import scrape_course
@@ -76,8 +78,13 @@ def main():
     if not args.prompt:
         parser.error("a prompt is required (or use --test to check your connection)")
 
+    if not os.environ.get("SKILLJAR_API_KEY"):
+        print("SKILLJAR_API_KEY is not set.", file=sys.stderr)
+        print("Set it with: export SKILLJAR_API_KEY=your-key-here", file=sys.stderr)
+        sys.exit(1)
+
     # Lazy import — only needed for plan generation, not --test
-    from tools.curriculum.planner import generate_plan
+    from tools.curriculum.planner import PlanGenerationError, generate_plan
 
     client = SkillJarClient()
 
@@ -87,42 +94,62 @@ def main():
 
     course_context = ""
 
-    if not args.new:
-        if args.course_id:
-            print(f"📚 Fetching course {args.course_id}...")
-            full_course = client.get_full_course_content(args.course_id)
-            matches = [full_course]
+    try:
+        if not args.new:
+            if args.course_id:
+                print(f"📚 Fetching course {args.course_id}...")
+                full_course = client.get_full_course_content(args.course_id)
+                matches = [full_course]
+            else:
+                print(f"🔍 Searching for courses matching: '{args.prompt}'")
+                matches = resolve_courses(args.prompt, client)
+
+            if matches:
+                best = matches[0]
+                course_id = best["id"]
+                print(
+                    f"✅ Best match: {best.get('title', 'Untitled')} "
+                    f"(score: {best.get('match_score', 'exact')})"
+                )
+
+                if len(matches) > 1:
+                    print("   Other matches:")
+                    for m in matches[1:]:
+                        print(f"   - {m.get('title', '')} ({m['match_score']})")
+
+                print("📖 Scraping lesson content...")
+                full_course = client.get_full_course_content(course_id)
+                lessons = scrape_course(full_course)
+                course_context = "\n\n---\n\n".join(l.summary() for l in lessons)
+                print(f"   Found {len(lessons)} lessons")
+            else:
+                print("⚠️  No matching courses found. Treating as new course request.")
         else:
-            print(f"🔍 Searching for courses matching: '{args.prompt}'")
-            matches = resolve_courses(args.prompt, client)
+            print("🆕 New course mode — skipping course lookup.")
 
-        if matches:
-            best = matches[0]
-            course_id = best["id"]
-            print(f"✅ Best match: {best['title']} (score: {best.get('match_score', 'exact')})")
+        print("🧠 Generating curriculum plan...")
+        plan = generate_plan(args.prompt, course_context, model=args.model)
 
-            if len(matches) > 1:
-                print("   Other matches:")
-                for m in matches[1:]:
-                    print(f"   - {m['title']} ({m['match_score']})")
-
-            print("📖 Scraping lesson content...")
-            full_course = client.get_full_course_content(course_id)
-            lessons = scrape_course(full_course)
-            course_context = "\n\n---\n\n".join(l.summary() for l in lessons)
-            print(f"   Found {len(lessons)} lessons")
+        if args.json_output:
+            print(json.dumps(plan.model_dump(), indent=2))
         else:
-            print("⚠️  No matching courses found. Treating as new course request.")
-    else:
-        print("🆕 New course mode — skipping course lookup.")
-
-    print("🧠 Generating curriculum plan...")
-    plan = generate_plan(args.prompt, course_context, model=args.model)
-
-    if args.json_output:
-        print(json.dumps(plan.model_dump(), indent=2))
-    else:
-        _print_plan(plan)
+            _print_plan(plan)
+    except httpx.HTTPStatusError as e:
+        body = ""
+        try:
+            body = e.response.text[:500]
+        except Exception:
+            pass
+        print(f"SkillJar API HTTP {e.response.status_code}: {e.request.url!s}", file=sys.stderr)
+        if body:
+            print(body, file=sys.stderr)
+        sys.exit(1)
+    except httpx.HTTPError as e:
+        print(f"SkillJar API request failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    except PlanGenerationError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
 
 
 def _print_plan(plan):

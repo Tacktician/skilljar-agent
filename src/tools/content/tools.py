@@ -215,9 +215,9 @@ def register(mcp, get_client):
             path = Path(file_path).expanduser()
             if not path.exists():
                 return json.dumps({"success": False, "error": f"File not found: {path}"})
-            fields["body"] = path.read_text(encoding="utf-8")
+            fields["content_html"] = path.read_text(encoding="utf-8")
         elif html_content:
-            fields["body"] = html_content
+            fields["content_html"] = html_content
 
         if not fields:
             return json.dumps({"success": False, "error": "Nothing to update. Provide title, html_content, or file_path."})

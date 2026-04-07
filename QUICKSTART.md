@@ -30,27 +30,24 @@ Verify:
 skilljar-agent --help
 ```
 
-### If you get `command not found` (common on macOS)
+### If you get `command not found` (common on macOS / Linux)
 
-pip installs scripts to a `bin/` directory that may not be on your PATH. Fix it:
+`pip` installs the `skilljar-agent` script into a directory that depends on your Python build. **`$(python3 -m site --user-base)/bin` is not always that directory** (for example, the python.org macOS installer often puts scripts under the framework’s `bin/`, and the user-base `bin` may not even exist).
 
-```bash
-# Check where pip puts scripts
-python3 -m site --user-base
-# Typical output: /Users/yourname/Library/Python/3.x
-
-# Add it to your PATH permanently
-echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-If the command still isn't found after that, pip may not have generated the script entry. You can verify with:
+Add **both** the user-site `bin` and the active Python **scripts** path (from `sysconfig`) to your `PATH`. Put this in `~/.zshrc` (macOS default) or `~/.bashrc` (many Linux setups), then `source` the file or open a new terminal:
 
 ```bash
-pip show -f skilljar-agent | grep bin
+export PATH="$(python3 -m site --user-base)/bin:$(python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))'):$PATH"
 ```
 
-If nothing shows up, use the alias workaround instead — this is reliable regardless of how pip resolves the entrypoint:
+You can confirm where the script landed:
+
+```bash
+python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))'
+pip show -f skilljar-agent | grep -E 'bin/|scripts'
+```
+
+If you prefer not to edit `PATH`, use the alias workaround — reliable regardless of where pip puts scripts:
 
 ```bash
 echo 'alias skilljar-agent="PYTHONPATH=/path/to/skilljar-agent/src python3 -m cli"' >> ~/.zshrc
@@ -306,7 +303,7 @@ See `src/tools/analytics/tools.py` for a minimal working example.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `command not found: skilljar-agent` | pip scripts dir not on PATH (common on macOS) | See install step 1 — add `$(python3 -m site --user-base)/bin` to PATH, or use the alias workaround |
+| `command not found: skilljar-agent` | pip scripts dir not on PATH (common on macOS/Linux) | See install step 1 — add user-base `bin` **and** `$(python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))')` to PATH, or use the `python3 -m cli` / alias workaround |
 | `KeyError: 'SKILLJAR_API_KEY'` | Env vars not loaded | Export them or use `python-dotenv` |
 | `httpx.HTTPStatusError: 401` | Bad SkillJar key | Regenerate in SkillJar dashboard |
 | `anthropic.AuthenticationError` | Bad Anthropic key (CLI only) | Check key at console.anthropic.com |

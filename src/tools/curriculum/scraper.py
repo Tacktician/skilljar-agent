@@ -56,7 +56,12 @@ class _HTMLStripper(HTMLParser):
 
 
 def extract_lesson_content(lesson: dict) -> LessonContent:
-    html = lesson.get("body", "") or ""
+    html = (
+        lesson.get("scraping_html")
+        or lesson.get("content_html")
+        or lesson.get("body")
+        or ""
+    ) or ""
     stripper = _HTMLStripper()
     stripper.feed(html)
     plain = re.sub(r"\s+", " ", " ".join(stripper.text_parts)).strip()

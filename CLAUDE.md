@@ -93,7 +93,7 @@ Tools in `enrollment/` and `classroom/` that modify data (e.g. `enroll_user`) ha
 
 | Domain | Status | Tools | Notes |
 |---|---|---|---|
-| curriculum | ✅ Implemented | `search_courses`, `get_course_content`, `get_course_catalog` | Read-only. Core functionality, fully working |
+| curriculum | ✅ Implemented | `search_courses`, `get_course_content`, `get_course_catalog` | Read-only. `get_course_content` builds course description from `short_description` / `long_description_html` (and legacy `description` if present) |
 | content | ✅ Implemented | `create_course`, `create_lesson_from_html`, `create_lesson_from_file`, `batch_create_lessons`, `update_lesson_content` | ⚠️ All write ops. Needs live testing. |
 | analytics | 🔧 Starter | `get_enrollment_stats` | Read-only. Calls real API, needs testing against live data |
 | enrollment | 🔧 Starter | `lookup_user`, `enroll_user` | `enroll_user` is a write op |
@@ -113,19 +113,20 @@ Tools in `enrollment/` and `classroom/` that modify data (e.g. `enroll_user`) ha
 - **Pagination**: Cursor-based with `next` field. `client.get_all_pages()` handles this.
 - **Docs**: https://api.skilljar.com/docs/
 
-Key endpoints used:
+Key endpoints used (see also `docs/skilljar-api.yaml`):
 
 | Endpoint | Method | Used by |
 |---|---|---|
 | `/v1/courses` | GET | curriculum (catalog, search) |
-| `/v1/courses` | POST | content (create_course) |
+| `/v1/courses` | POST | content (`create_course` — uses `short_description`, `enforce_sequential_navigation`, `title`) |
 | `/v1/courses/{id}` | GET | curriculum (course detail) |
-| `/v1/courses/{id}` | PUT | content (update_course) |
-| `/v1/courses/{id}/lessons` | GET | curriculum (lesson list) |
-| `/v1/courses/{id}/lessons` | POST | content (create_lesson) |
-| `/v1/courses/{id}/lessons/{id}` | GET | curriculum (lesson body + HTML) |
-| `/v1/courses/{id}/lessons/{id}` | PUT | content (update_lesson) |
-| `/v1/courses/{id}/lessons/order` | PUT | content (reorder_lessons — planned) |
+| `/v1/courses/{id}` | PUT | content (`update_course`; maps `description` → `short_description` in the client) |
+| `/v1/lessons` | GET | curriculum (`list_lessons` — requires `course_id` query param) |
+| `/v1/lessons` | POST | content (`create_lesson` — `content_html`, `type`, `order`, `course_id`, `title`) |
+| `/v1/lessons/{id}` | GET | curriculum (`get_lesson` — pass `course_id` query param) |
+| `/v1/lessons/{id}` | PUT | content (`update_lesson`; maps legacy `body` → `content_html`) |
+| `/v1/lessons/{id}/content-items` | GET | curriculum (aggregates HTML for `MODULAR` / `SECTION` / `WEB_PACKAGE` lessons) |
+| `/v1/courses/{id}/lessons/order` | PUT | client only (`reorder_lessons` — not in bundled OpenAPI; may be legacy) |
 | `/v1/courses/{id}/enrollments` | GET | analytics, classroom |
 | `/v1/courses/{id}/enrollments` | POST | enrollment (enroll_user) |
 | `/v1/users?email=` | GET | enrollment, classroom (user lookup) |
@@ -161,6 +162,8 @@ skilljar-agent "update existing course"  # Fuzzy match + plan
 PYTHONPATH=src python mcp_server.py      # Start MCP server locally
 ```
 
+Non-`--test` CLI runs require **`SKILLJAR_API_KEY`** up front (clear error if missing). Course fetch and plan generation wrap SkillJar **`httpx`** errors and planner **`PlanGenerationError`** (Anthropic API, invalid JSON, or `CurriculumPlan` validation) with exit code 1.
+
 ### MCP config for Claude Code (`~/.claude/mcp.json`)
 
 ```json
@@ -179,16 +182,16 @@ PYTHONPATH=src python mcp_server.py      # Start MCP server locally
 
 ## Known Issues & Gotchas
 
-### macOS PATH issue
-`pip install -e .` may not put the `skilljar-agent` script on your PATH. Fix:
+### macOS / Linux PATH issue
+`pip install -e .` may not put the `skilljar-agent` script on your PATH — scripts often land in `sysconfig`’s **scripts** directory (e.g. Python framework `bin/` on macOS), not only `$(python3 -m site --user-base)/bin`. Fix:
 ```bash
-echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+export PATH="$(python3 -m site --user-base)/bin:$(python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))'):$PATH"
 ```
-Or use the alias workaround:
+Add that to `~/.zshrc` or `~/.bashrc`, then `source` it. Or use:
 ```bash
-alias skilljar-agent="PYTHONPATH=/path/to/skilljar-agent/src python3 -m cli"
+PYTHONPATH=src python3 -m cli
 ```
+from the repo root. See [README.md](README.md) Installation and [QUICKSTART.md](QUICKSTART.md).
 
 ### PYTHONPATH for MCP server
 Running `python mcp_server.py` directly may fail with `ModuleNotFoundError` because `core/` and `tools/` are inside `src/`. Either:
@@ -198,8 +201,8 @@ Running `python mcp_server.py` directly may fail with `ModuleNotFoundError` beca
 ### FastMCP version compatibility
 The installed `mcp` package may not support `FastMCP(description=...)`. The server uses `FastMCP("skilljar-agent")` with no description kwarg. Tool-level docstrings provide all the context the host agent needs.
 
-### SkillJar lesson HTML
-SkillJar lesson `body` fields contain raw HTML. The `scraper.py` parser handles standard HTML (headings, code blocks, paragraphs). If your SkillJar instance uses custom interactive widgets (tab carousels, blur-reveal quizzes, step-flow navigators), the parser may need extending to handle those elements.
+### SkillJar lesson HTML and modular lessons
+The API returns lesson HTML in **`content_html`** (not `body`). `get_full_course_content()` sets a derived **`scraping_html`** field: primary text from `content_html` / `description_html` (and legacy `body` if present), plus—for **`MODULAR`**, **`SECTION`**, **`WEB_PACKAGE`**, or when top-level HTML is empty—content merged from **`GET /v1/lessons/{id}/content-items`**. The `scraper.py` parser reads `scraping_html` first, then falls back to `content_html` / `body`, and handles standard HTML (headings, code blocks, paragraphs). Custom interactive widgets may still need parser extensions.
 
 ### Ctrl+C shutdown
 The MCP server uses a `SIGINT` signal handler with `os._exit(0)` for clean shutdown. This prevents the async runtime traceback that otherwise spills on Ctrl+C. If you see traceback on shutdown, make sure you have the latest `mcp_server.py`.
