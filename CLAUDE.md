@@ -49,6 +49,9 @@ skilljar-agent/
         ├── enrollment/
         │   ├── __init__.py
         │   └── tools.py         # lookup_user, enroll_user (⚠️ write ops)
+        ├── content/
+        │   ├── __init__.py
+        │   └── tools.py         # create/update courses and lessons (⚠️ all write ops)
         └── classroom/
             ├── __init__.py
             └── tools.py         # check_user_access (ILT support, starter)
@@ -56,11 +59,15 @@ skilljar-agent/
 
 ## Architecture Decisions
 
-### Why MCP tools are data-only (no nested LLM calls)
+### Why MCP tools don't make nested LLM calls
 
-When running inside Claude Code or Cursor, the host agent IS the LLM. Having the MCP server make its own Anthropic API call would be redundant — double the cost, double the latency, no benefit. The MCP server only does data retrieval; the host agent reasons over the results.
+When running inside Claude Code or Cursor, the host agent IS the LLM. Having the MCP server make its own Anthropic API call would be redundant — double the cost, double the latency, no benefit. The MCP server handles data retrieval AND mutations (course/lesson CRUD); the host agent reasons over results and decides what actions to take.
 
 The `planner.py` module (which DOES call the Anthropic API) is only imported by the CLI, not the MCP server. It uses a lazy import so `--test` doesn't require an Anthropic key.
+
+### Read vs write operations
+
+Tool groups split into read-only (curriculum, analytics) and read-write (content, enrollment, classroom). All write tools have ⚠️ flags in their docstrings so the host agent knows to confirm with the user before executing. This is a convention enforced by tool descriptions, not by the server itself.
 
 ### Tool group registration pattern
 
@@ -86,13 +93,15 @@ Tools in `enrollment/` and `classroom/` that modify data (e.g. `enroll_user`) ha
 
 | Domain | Status | Tools | Notes |
 |---|---|---|---|
-| curriculum | ✅ Implemented | `search_courses`, `get_course_content`, `get_course_catalog` | Core functionality, fully working |
-| analytics | 🔧 Starter | `get_enrollment_stats` | Calls real API, needs testing against live data |
+| curriculum | ✅ Implemented | `search_courses`, `get_course_content`, `get_course_catalog` | Read-only. Core functionality, fully working |
+| content | ✅ Implemented | `create_course`, `create_lesson_from_html`, `create_lesson_from_file`, `batch_create_lessons`, `update_lesson_content` | ⚠️ All write ops. Needs live testing. |
+| analytics | 🔧 Starter | `get_enrollment_stats` | Read-only. Calls real API, needs testing against live data |
 | enrollment | 🔧 Starter | `lookup_user`, `enroll_user` | `enroll_user` is a write op |
 | classroom | 🔧 Starter | `check_user_access` | For ILT facilitators, needs `reset_password`, `provision_sandbox` |
 
 ### Planned tools (not yet implemented)
 
+- `content`: `delete_lesson` (⚠️ destructive), `reorder_lessons`, `duplicate_course`, `publish_course` / `unpublish_course`
 - `analytics`: `get_lesson_performance`, `get_assessment_results`, `get_path_progress`
 - `enrollment`: `unenroll_user`, `batch_enroll`, `transfer_enrollment`
 - `classroom`: `reset_user_password` (⚠️ write), `provision_sandbox` (⚠️ write), `get_live_session_roster`, `bulk_check_access`
@@ -109,9 +118,14 @@ Key endpoints used:
 | Endpoint | Method | Used by |
 |---|---|---|
 | `/v1/courses` | GET | curriculum (catalog, search) |
+| `/v1/courses` | POST | content (create_course) |
 | `/v1/courses/{id}` | GET | curriculum (course detail) |
+| `/v1/courses/{id}` | PUT | content (update_course) |
 | `/v1/courses/{id}/lessons` | GET | curriculum (lesson list) |
+| `/v1/courses/{id}/lessons` | POST | content (create_lesson) |
 | `/v1/courses/{id}/lessons/{id}` | GET | curriculum (lesson body + HTML) |
+| `/v1/courses/{id}/lessons/{id}` | PUT | content (update_lesson) |
+| `/v1/courses/{id}/lessons/order` | PUT | content (reorder_lessons — planned) |
 | `/v1/courses/{id}/enrollments` | GET | analytics, classroom |
 | `/v1/courses/{id}/enrollments` | POST | enrollment (enroll_user) |
 | `/v1/users?email=` | GET | enrollment, classroom (user lookup) |
