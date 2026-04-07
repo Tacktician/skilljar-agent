@@ -1,0 +1,24 @@
+# Environment & secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.python-version
+
+# Cache (generated at runtime)
+.cache/
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+.DS_Store
