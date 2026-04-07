@@ -18,11 +18,15 @@ The MCP server is the primary intended use case. The CLI exists for terminal-onl
 skilljar-agent/
 ├── mcp_server.py                # MCP registry — mounts all tool groups
 ├── pyproject.toml               # Package config, entrypoints, dependencies
-├── .env.example                 # Environment variable template
+├── .cursor/
+│   └── mcp.json                 # Cursor MCP (python3, cwd, envFile, PYTHONPATH)
+├── .env.example                 # Environment variable template → copy to .env
 ├── .gitignore
 ├── README.md                    # Project overview
 ├── QUICKSTART.md                # Setup guide (two tracks: IDE agent vs CLI)
 ├── CLAUDE.md                    # This file
+├── docs/
+│   └── skilljar-api.yaml        # Bundled SkillJar OpenAPI (reference)
 ├── prompts/
 │   └── curriculum_plan.md       # System prompt for CLI planner (version-controlled)
 └── src/
@@ -87,7 +91,7 @@ The CLI has a `--clear-cache` flag. Programmatically: `client.clear_cache()`.
 
 ### Write operations require confirmation
 
-Tools in `enrollment/` and `classroom/` that modify data (e.g. `enroll_user`) have ⚠️ flags in their docstrings. This tells the host agent to confirm with the user before executing. This is a convention — the MCP server doesn't enforce it.
+Tools in `content/`, `enrollment/`, and `classroom/` that modify data have ⚠️ flags in their docstrings (e.g. `create_course`, `enroll_user`). This tells the host agent to confirm with the user before executing. This is a convention — the MCP server doesn't enforce it.
 
 ## Tool Group Status
 
@@ -125,7 +129,7 @@ Key endpoints used (see also `docs/skilljar-api.yaml`):
 | `/v1/lessons` | POST | content (`create_lesson` — `content_html`, `type`, `order`, `course_id`, `title`) |
 | `/v1/lessons/{id}` | GET | curriculum (`get_lesson` — pass `course_id` query param) |
 | `/v1/lessons/{id}` | PUT | content (`update_lesson`; maps legacy `body` → `content_html`) |
-| `/v1/lessons/{id}/content-items` | GET | curriculum (aggregates HTML for `MODULAR` / `SECTION` / `WEB_PACKAGE` lessons) |
+| `/v1/lessons/{id}/content-items` | GET | curriculum (always fetched per lesson; HTML merged into `scraping_html` when items exist — any lesson type) |
 | `/v1/courses/{id}/lessons/order` | PUT | client only (`reorder_lessons` — not in bundled OpenAPI; may be legacy) |
 | `/v1/courses/{id}/enrollments` | GET | analytics, classroom |
 | `/v1/courses/{id}/enrollments` | POST | enrollment (enroll_user) |
@@ -159,24 +163,27 @@ skilljar-agent --test                    # Verify SkillJar API connection
 skilljar-agent --help                    # CLI usage
 skilljar-agent --new "course idea"       # Generate plan for new course
 skilljar-agent "update existing course"  # Fuzzy match + plan
-PYTHONPATH=src python mcp_server.py      # Start MCP server locally
+PYTHONPATH=src python3 mcp_server.py     # Start MCP server locally (logs on stderr)
 ```
 
 Non-`--test` CLI runs require **`SKILLJAR_API_KEY`** up front (clear error if missing). Course fetch and plan generation wrap SkillJar **`httpx`** errors and planner **`PlanGenerationError`** (Anthropic API, invalid JSON, or `CurriculumPlan` validation) with exit code 1.
 
 ### MCP config for Cursor (project)
 
-See **[`.cursor/mcp.json`](.cursor/mcp.json)** — uses `${workspaceFolder}` for paths and `${env:SKILLJAR_API_KEY}`. Enable **skilljar-agent** under Cursor **Settings → MCP**; use **Agent** mode for tool calls.
+See **[`.cursor/mcp.json`](.cursor/mcp.json)** — `python3 mcp_server.py` with **`cwd`**, **`envFile`** → `.env`, and **`PYTHONPATH=src`**. Copy **[`.env.example`](.env.example)** to `.env`; use `SKILLJAR_API_KEY=value` with **no spaces around `=`**. Startup diagnostics go to **stderr** so **stdout** stays clean for MCP stdio. Enable **skilljar-agent** under **Settings → MCP**; use **Agent** mode for tool calls.
 
 ### MCP config for Claude Code (`~/.claude/mcp.json`)
+
+Set **`PYTHONPATH`** to `src` (or use `pip install -e .` so imports resolve without it):
 
 ```json
 {
   "mcpServers": {
     "skilljar-agent": {
-      "command": "python",
+      "command": "python3",
       "args": ["/absolute/path/to/skilljar-agent/mcp_server.py"],
       "env": {
+        "PYTHONPATH": "/absolute/path/to/skilljar-agent/src",
         "SKILLJAR_API_KEY": "${SKILLJAR_API_KEY}"
       }
     }
@@ -198,15 +205,22 @@ PYTHONPATH=src python3 -m cli
 from the repo root. See [README.md](README.md) Installation and [QUICKSTART.md](QUICKSTART.md).
 
 ### PYTHONPATH for MCP server
-Running `python mcp_server.py` directly may fail with `ModuleNotFoundError` because `core/` and `tools/` are inside `src/`. Either:
-- Run with `PYTHONPATH=src python mcp_server.py`
+Running `python3 mcp_server.py` directly may fail with `ModuleNotFoundError` because `core/` and `tools/` are inside `src/`. Either:
+- Run with `PYTHONPATH=src python3 mcp_server.py`
 - Or let the MCP config handle it (the installed package resolves paths correctly)
 
 ### FastMCP version compatibility
 The installed `mcp` package may not support `FastMCP(description=...)`. The server uses `FastMCP("skilljar-agent")` with no description kwarg. Tool-level docstrings provide all the context the host agent needs.
 
+### MCP stdio and logging
+Do not print MCP startup banners to **stdout** — that corrupts JSON-RPC over stdio and breaks IDE clients (e.g. Cursor `Connection closed`). Use **stderr** for any human-readable logs before `mcp.run()`.
+
+The MCP Python SDK also logs routine requests at **INFO** on stderr; **`mcp_server.py` sets the `mcp` and `httpx` loggers to WARNING** so Cursor’s MCP output is not flooded. Lines tagged `[error]` there are often **stderr text**, not application failures — check for `Successfully connected` / `connected: true`.
+
 ### SkillJar lesson HTML and modular lessons
-The API returns lesson HTML in **`content_html`** (not `body`). `get_full_course_content()` sets a derived **`scraping_html`** field: primary text from `content_html` / `description_html` (and legacy `body` if present), plus—for **`MODULAR`**, **`SECTION`**, **`WEB_PACKAGE`**, or when top-level HTML is empty—content merged from **`GET /v1/lessons/{id}/content-items`**. The `scraper.py` parser reads `scraping_html` first, then falls back to `content_html` / `body`, and handles standard HTML (headings, code blocks, paragraphs). Custom interactive widgets may still need parser extensions.
+The API returns lesson HTML in **`content_html`** (not `body`). `get_full_course_content()` sets a derived **`scraping_html`** field: top-level `content_html` / `description_html` (and legacy `body` if present), **plus** HTML aggregated from **`GET /v1/lessons/{id}/content-items`** for every lesson (paginated `results[]`, each item’s `content_html` / `header` / `order`; **`QUIZ`** / **`ASSET`** blocks without HTML get short placeholder text so previews are not falsely empty). If the aggregated items are already contained in the top-level HTML (normalized), the merge is skipped to avoid duplicates.
+
+The **`scraper.py`** parser reads `scraping_html` first, then falls back to `content_html` / `body`. It emits **plain-text previews** for MCP/CLI: normal HTML text, headings, and code blocks; **document order** is preserved when prose and embeds alternate. **`<style>`** and **`<script>`** bodies are skipped so bundled lesson CSS/JS does not flood previews; **`<noscript>`** is **not** skipped (static fallback copy there is kept). **iframe** / **video** / **embed** / **object** tags add preview lines from the **`title`** attribute and **`src`**: Arcade (`*.arcade.software`) uses a line like **`Embedded Arcade: {title} — {url}`** (or URL-only if no title); other hosts use **`Embedded: {title}`** or a short host hint. Custom interactive widgets may still need parser extensions.
 
 ### Ctrl+C shutdown
 The MCP server uses a `SIGINT` signal handler with `os._exit(0)` for clean shutdown. This prevents the async runtime traceback that otherwise spills on Ctrl+C. If you see traceback on shutdown, make sure you have the latest `mcp_server.py`.

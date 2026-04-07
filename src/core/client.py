@@ -9,7 +9,9 @@ Auth: HTTP Basic Auth — API key as username, empty password.
 Docs: https://api.skilljar.com/docs/
 """
 
+import html
 import os
+import re
 from base64 import b64encode
 from pathlib import Path
 from typing import Optional
@@ -19,6 +21,61 @@ import httpx
 from core.cache import FileCache
 
 
+def _normalized_compact(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip())
+
+
+def _extra_redundant_with_base(base: str, extra: str) -> bool:
+    """True if normalized extra is empty or already represented in base (avoid duplicate merge)."""
+    nb = _normalized_compact(base)
+    ne = _normalized_compact(extra)
+    if not ne:
+        return True
+    return ne in nb
+
+
+def _content_item_fragment(item: dict) -> str:
+    """Single lesson content-item as HTML (SkillJar LessonContentItem schema)."""
+    header = (item.get("header") or "").strip()
+    header_h = html.escape(header) if header else ""
+    chunk = (item.get("content_html") or "").strip()
+    itype = (item.get("type") or "").upper()
+
+    def wrap_body(inner: str) -> str:
+        if header_h:
+            return f"<h2>{header_h}</h2>\n{inner}"
+        return inner
+
+    if chunk:
+        if header_h:
+            return f"<h2>{header_h}</h2>\n{chunk}"
+        return chunk
+
+    if itype == "QUIZ":
+        qid = (item.get("content_quiz_id") or "").strip()
+        bits = ["Quiz block"]
+        if header:
+            bits.append(header)
+        if qid:
+            bits.append(f"id={qid}")
+        body = html.escape(" — ".join(bits))
+        return wrap_body(f"<p>{body}</p>")
+
+    if itype == "ASSET":
+        aid = (item.get("content_asset_id") or "").strip()
+        bits = ["Asset block"]
+        if header:
+            bits.append(header)
+        if aid:
+            bits.append(f"id={aid}")
+        body = html.escape(" — ".join(bits))
+        return wrap_body(f"<p>{body}</p>")
+
+    if header_h:
+        return f"<h2>{header_h}</h2>"
+    return ""
+
+
 def _aggregate_lesson_content_items(items: list[dict]) -> str:
     """Join HTML from lesson content items in display order."""
     if not items:
@@ -26,14 +83,9 @@ def _aggregate_lesson_content_items(items: list[dict]) -> str:
     sorted_items = sorted(items, key=lambda x: x.get("order", 0))
     parts = []
     for item in sorted_items:
-        header = (item.get("header") or "").strip()
-        chunk = (item.get("content_html") or "").strip()
-        if header and chunk:
-            parts.append(f"<h2>{header}</h2>\n{chunk}")
-        elif header:
-            parts.append(f"<h2>{header}</h2>")
-        elif chunk:
-            parts.append(chunk)
+        frag = _content_item_fragment(item).strip()
+        if frag:
+            parts.append(frag)
     return "\n\n".join(parts)
 
 
@@ -167,14 +219,17 @@ class SkillJarClient:
         return max(l.get("order", 0) for l in lessons) + 1
 
     def _attach_scraping_html(self, lesson: dict) -> None:
-        """Set `scraping_html` for curriculum scraping (HTML + modular blocks)."""
+        """Set `scraping_html` for curriculum scraping (HTML + content-items).
+
+        Always loads GET /lessons/{id}/content-items and merges when items exist.
+        Top-level lesson HTML alone can be a shell while real copy lives in items.
+        """
         base = _lesson_primary_html(lesson)
-        ltype = (lesson.get("type") or "").upper()
-        extra = ""
-        if not base or ltype in ("MODULAR", "SECTION", "WEB_PACKAGE"):
-            items = self.list_lesson_content_items(lesson["id"])
-            extra = _aggregate_lesson_content_items(items).strip()
-        if base and extra:
+        items = self.list_lesson_content_items(lesson["id"])
+        extra = _aggregate_lesson_content_items(items).strip()
+        if extra and _extra_redundant_with_base(base, extra):
+            lesson["scraping_html"] = base
+        elif base and extra:
             lesson["scraping_html"] = f"{base}\n\n{extra}"
         elif extra:
             lesson["scraping_html"] = extra

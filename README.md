@@ -6,7 +6,7 @@ A modular platform agent for SkillJar — curriculum planning, enrollment analyt
 
 | Domain | Status | Tools | Description |
 |---|---|---|---|
-| **Curriculum** | ✅ Implemented | `search_courses`, `get_course_content`, `get_course_catalog` | Fuzzy course matching, lesson scraping (incl. modular lessons via content-items), catalog browsing |
+| **Curriculum** | ✅ Implemented | `search_courses`, `get_course_content`, `get_course_catalog` | Fuzzy course matching; lesson scraping merges **all** lessons with `content-items` when present (not only modular types), catalog browsing |
 | **Content** | ✅ Implemented | `create_course`, `create_lesson_from_html`, `create_lesson_from_file`, `batch_create_lessons`, `update_lesson_content` | Course/lesson writes (⚠️ confirm before use) |
 | **Analytics** | 🔧 Starter | `get_enrollment_stats` | Enrollment counts, completion rates |
 | **Enrollment** | 🔧 Starter | `lookup_user`, `enroll_user` | User lookup, course enrollment (write ops) |
@@ -44,15 +44,22 @@ More detail and troubleshooting: [QUICKSTART.md](QUICKSTART.md).
 
 **Requires:** `SKILLJAR_API_KEY` only. No Anthropic key.
 
-The MCP server provides data tools; your IDE's agent handles reasoning. See [QUICKSTART.md](QUICKSTART.md) for setup.
+The MCP server exposes SkillJar tools; the IDE agent does the reasoning.
+
+- **Cursor (this repo):** [`.cursor/mcp.json`](.cursor/mcp.json) runs `python3` on `mcp_server.py` with `cwd` set to the repo, **`envFile`** set to `${workspaceFolder}/.env`, and `PYTHONPATH` → `src`. Copy [`.env.example`](.env.example) to `.env`. Enable **skilljar-agent** under Settings → MCP; use **Agent** chat for tool calls. Details: [QUICKSTART.md](QUICKSTART.md).
+
+- **Claude Code / other hosts:** point `command`/`args` at `mcp_server.py` and ensure `PYTHONPATH` includes `src` (or use `pip install -e .`). Example:
 
 ```json
 {
   "mcpServers": {
     "skilljar-agent": {
-      "command": "python",
-      "args": ["/path/to/skilljar-agent/mcp_server.py"],
-      "env": { "SKILLJAR_API_KEY": "your-key" }
+      "command": "python3",
+      "args": ["/absolute/path/to/skilljar-agent/mcp_server.py"],
+      "env": {
+        "PYTHONPATH": "/absolute/path/to/skilljar-agent/src",
+        "SKILLJAR_API_KEY": "${env:SKILLJAR_API_KEY}"
+      }
     }
   }
 }
@@ -104,6 +111,11 @@ src/
 │       └── tools.py
 
 mcp_server.py                    # MCP registry — mounts all tool groups
+.cursor/
+└── mcp.json                     # Cursor MCP config (project-level)
+.env.example                     # Template for SKILLJAR_API_KEY → copy to .env
+docs/
+└── skilljar-api.yaml            # Bundled OpenAPI reference (optional)
 prompts/
 └── curriculum_plan.md           # Version-controlled system prompt (CLI mode)
 ```
@@ -146,7 +158,7 @@ The client matches the [published API](https://api.skilljar.com/docs/) / `docs/s
 | `POST /v1/courses` | Create course (`short_description`, `title`, `enforce_sequential_navigation`, …) |
 | `GET /v1/lessons?course_id={id}` | Lesson list for a course |
 | `GET /v1/lessons/{lesson_id}?course_id={id}` | Lesson detail (`content_html`, `type`, …) |
-| `GET /v1/lessons/{lesson_id}/content-items` | Blocks for modular / multi-part lessons |
+| `GET /v1/lessons/{lesson_id}/content-items` | Merged into lesson HTML for scraping (all lesson types when items exist) |
 | `POST /v1/lessons` | Create lesson (`content_html`, `type`, `order`, `course_id`, `title`) |
 | `PUT /v1/lessons/{lesson_id}` | Update lesson |
 | `GET /v1/courses/{id}/enrollments` | Enrollment list |
