@@ -164,6 +164,10 @@ PYTHONPATH=src python mcp_server.py      # Start MCP server locally
 
 Non-`--test` CLI runs require **`SKILLJAR_API_KEY`** up front (clear error if missing). Course fetch and plan generation wrap SkillJar **`httpx`** errors and planner **`PlanGenerationError`** (Anthropic API, invalid JSON, or `CurriculumPlan` validation) with exit code 1.
 
+### MCP config for Cursor (project)
+
+See **[`.cursor/mcp.json`](.cursor/mcp.json)** — uses `${workspaceFolder}` for paths and `${env:SKILLJAR_API_KEY}`. Enable **skilljar-agent** under Cursor **Settings → MCP**; use **Agent** mode for tool calls.
+
 ### MCP config for Claude Code (`~/.claude/mcp.json`)
 
 ```json

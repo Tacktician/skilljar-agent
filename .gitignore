@@ -18,7 +18,8 @@ venv/
 # IDE
 .vscode/
 .idea/
-.cursor/
+.cursor/*
+!.cursor/mcp.json
 *.swp
 *.swo
 .DS_Store

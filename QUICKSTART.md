@@ -179,7 +179,9 @@ Restart Claude Code.
 
 ### Configure Cursor
 
-Go to **Settings → MCP Servers → Add Server** and point to the same command/args. See [Cursor's MCP docs](https://docs.cursor.com/context/model-context-protocol) for exact format.
+This repo includes **[`.cursor/mcp.json`](.cursor/mcp.json)** (project-level). It runs `python3` with `mcp_server.py`, sets `PYTHONPATH` to `src`, and passes `SKILLJAR_API_KEY` from your environment via `${env:SKILLJAR_API_KEY}`. Export that key in your shell (or OS env) before starting Cursor, or add an `envFile` entry in `mcp.json` pointing at a local `.env` (gitignored).
+
+Cursor should pick up the file automatically; if not, use **Settings → MCP** to enable **skilljar-agent**. See [Cursor MCP docs](https://cursor.com/docs/mcp). Use **Agent** mode in chat so tool calls are available.
 
 ### Available tools
 
