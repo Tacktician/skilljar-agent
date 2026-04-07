@@ -7,10 +7,17 @@ the host agent handles reasoning — this module is not loaded.
 
 import json
 from pathlib import Path
+
 import anthropic
+from pydantic import ValidationError
+
 from tools.curriculum.models import CurriculumPlan
 
 PROMPT_PATH = Path(__file__).parent.parent.parent.parent / "prompts" / "curriculum_plan.md"
+
+
+class PlanGenerationError(Exception):
+    """Raised when the curriculum planner cannot produce a valid plan."""
 
 
 def generate_plan(
@@ -18,7 +25,13 @@ def generate_plan(
     course_context: str,
     model: str = "claude-sonnet-4-20250514",
 ) -> CurriculumPlan:
-    client = anthropic.Anthropic()
+    try:
+        client = anthropic.Anthropic()
+    except Exception as e:
+        raise PlanGenerationError(
+            "Could not initialize Anthropic client. Is ANTHROPIC_API_KEY set?"
+        ) from e
+
     system = PROMPT_PATH.read_text()
 
     user_message = f"""## User Request
@@ -29,15 +42,28 @@ def generate_plan(
 
 Respond with a JSON object matching the CurriculumPlan schema. No markdown fences."""
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        system=system,
-        messages=[{"role": "user", "content": user_message}],
-    )
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            system=system,
+            messages=[{"role": "user", "content": user_message}],
+        )
+    except anthropic.APIError as e:
+        raise PlanGenerationError(f"Anthropic API error: {e}") from e
 
+    if not response.content:
+        raise PlanGenerationError("Empty response from the model.")
     raw = response.content[0].text.strip()
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
 
-    return CurriculumPlan(**json.loads(raw))
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise PlanGenerationError(f"Model did not return valid JSON: {e}") from e
+
+    try:
+        return CurriculumPlan(**data)
+    except ValidationError as e:
+        raise PlanGenerationError(f"Response did not match CurriculumPlan: {e}") from e

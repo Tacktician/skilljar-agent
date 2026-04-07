@@ -30,27 +30,24 @@ Verify:
 skilljar-agent --help
 ```
 
-### If you get `command not found` (common on macOS)
+### If you get `command not found` (common on macOS / Linux)
 
-pip installs scripts to a `bin/` directory that may not be on your PATH. Fix it:
+`pip` installs the `skilljar-agent` script into a directory that depends on your Python build. **`$(python3 -m site --user-base)/bin` is not always that directory** (for example, the python.org macOS installer often puts scripts under the framework’s `bin/`, and the user-base `bin` may not even exist).
 
-```bash
-# Check where pip puts scripts
-python3 -m site --user-base
-# Typical output: /Users/yourname/Library/Python/3.x
-
-# Add it to your PATH permanently
-echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-If the command still isn't found after that, pip may not have generated the script entry. You can verify with:
+Add **both** the user-site `bin` and the active Python **scripts** path (from `sysconfig`) to your `PATH`. Put this in `~/.zshrc` (macOS default) or `~/.bashrc` (many Linux setups), then `source` the file or open a new terminal:
 
 ```bash
-pip show -f skilljar-agent | grep bin
+export PATH="$(python3 -m site --user-base)/bin:$(python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))'):$PATH"
 ```
 
-If nothing shows up, use the alias workaround instead — this is reliable regardless of how pip resolves the entrypoint:
+You can confirm where the script landed:
+
+```bash
+python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))'
+pip show -f skilljar-agent | grep -E 'bin/|scripts'
+```
+
+If you prefer not to edit `PATH`, use the alias workaround — reliable regardless of where pip puts scripts:
 
 ```bash
 echo 'alias skilljar-agent="PYTHONPATH=/path/to/skilljar-agent/src python3 -m cli"' >> ~/.zshrc
@@ -129,10 +126,10 @@ From the project root:
 
 ```bash
 cd ~/Documents/skilljar-agent
-PYTHONPATH=src python mcp_server.py
+PYTHONPATH=src python3 mcp_server.py
 ```
 
-You should see:
+You should see (on **stderr**; stdout stays free for MCP JSON-RPC):
 
 ```
 ==================================================
@@ -145,10 +142,11 @@ You should see:
    ├── curriculum  (search_courses, get_course_content, get_course_catalog)
    ├── analytics   (get_enrollment_stats)
    ├── enrollment  (lookup_user, enroll_user)
-   └── classroom   (check_user_access)
+   ├── classroom   (check_user_access)
+   └── content     (create_course, create_lesson_from_html, create_lesson_from_file, batch_create_lessons, update_lesson_content)
 
 ✅ MCP server is running. Waiting for tool calls...
-   (This will stay silent until an agent connects. Ctrl+C to stop)
+   (stdio JSON-RPC on stdout; logs here on stderr. Ctrl+C to stop)
 ==================================================
 ```
 
@@ -162,16 +160,17 @@ If you see `SKILLJAR_API_KEY: ❌ not set`, make sure the env var is exported in
 
 ### Configure Claude Code
 
-Add to `~/.claude/mcp.json`:
+Add to `~/.claude/mcp.json` (set **`PYTHONPATH`** to the repo’s `src` unless you use `pip install -e .`):
 
 ```json
 {
   "mcpServers": {
     "skilljar-agent": {
-      "command": "python",
+      "command": "python3",
       "args": ["/absolute/path/to/skilljar-agent/mcp_server.py"],
       "env": {
-        "SKILLJAR_API_KEY": "your-key"
+        "PYTHONPATH": "/absolute/path/to/skilljar-agent/src",
+        "SKILLJAR_API_KEY": "${SKILLJAR_API_KEY}"
       }
     }
   }
@@ -182,21 +181,30 @@ Restart Claude Code.
 
 ### Configure Cursor
 
-Go to **Settings → MCP Servers → Add Server** and point to the same command/args. See [Cursor's MCP docs](https://docs.cursor.com/context/model-context-protocol) for exact format.
+This repo includes **[`.cursor/mcp.json`](.cursor/mcp.json)** (project-level): **`python3`** runs **`mcp_server.py`** with **`cwd`** and **`PYTHONPATH`** set to the repo, and **`envFile`** pointing at repo-root **`.env`** for `SKILLJAR_API_KEY`. If Cursor does not load `.env` into the MCP process, add **`"SKILLJAR_API_KEY": "${env:SKILLJAR_API_KEY}"`** under `env` and ensure the key is in the environment Cursor inherits, or check Cursor MCP logs.
+
+Create **`.env`** from [`.env.example`](.env.example). Use **`SKILLJAR_API_KEY=...` with no spaces around `=`** (quotes around the value are optional for SkillJar keys; avoid smart quotes). Keep `.env` gitignored.
+
+Cursor should pick up the config when the workspace is the repo root; enable **skilljar-agent** under **Settings → MCP**. See [Cursor MCP docs](https://cursor.com/docs/mcp). Use **Agent** mode in chat so tool calls are available.
 
 ### Available tools
 
-All four tool groups are mounted automatically:
+All **five** tool groups are mounted automatically:
 
 | Tool | Group | Description |
 |---|---|---|
 | `search_courses` | Curriculum | Fuzzy title match |
-| `get_course_content` | Curriculum | Scrape lesson content for a course |
+| `get_course_content` | Curriculum | Per-lesson plain-text previews from merged HTML (Arcade/embed lines, skips inline CSS/JS; see [CLAUDE.md](CLAUDE.md)) |
 | `get_course_catalog` | Curriculum | Full course listing (cached) |
 | `get_enrollment_stats` | Analytics | Enrollment count and completion rate |
 | `lookup_user` | Enrollment | Find a user by email |
 | `enroll_user` | Enrollment | Enroll a user in a course (⚠️ write) |
 | `check_user_access` | Classroom | Check if a learner can access a course |
+| `create_course` | Content | Create a course (⚠️ write) |
+| `create_lesson_from_html` | Content | Create lesson from HTML (⚠️ write) |
+| `create_lesson_from_file` | Content | Create lesson from file (⚠️ write) |
+| `batch_create_lessons` | Content | Batch create lessons (⚠️ write) |
+| `update_lesson_content` | Content | Update lesson body/title (⚠️ write) |
 
 ### Try it
 
@@ -216,7 +224,7 @@ The agent chains tools on its own — no second API key, no extra cost.
 
 ### How this differs from the CLI
 
-The CLI bundles its own Claude API call via `planner.py` so it works without an agent IDE. In MCP mode, your IDE *is* the LLM. The MCP server is pure data retrieval — fast, cheap, and simple to debug.
+The CLI bundles its own Claude API call via `planner.py` so it works without an agent IDE. In MCP mode, your IDE *is* the LLM. The MCP server does not call Anthropic; it exposes **read** tools (curriculum, analytics, etc.) and **write** tools (content, enrollment) for the host to use with confirmation.
 
 ---
 
@@ -237,7 +245,7 @@ Get one at [console.anthropic.com/settings/keys](https://console.anthropic.com/s
 ### Verify the Anthropic connection
 
 ```bash
-python -c "
+python3 -c "
 import anthropic
 client = anthropic.Anthropic()
 resp = client.messages.create(
@@ -306,12 +314,13 @@ See `src/tools/analytics/tools.py` for a minimal working example.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `command not found: skilljar-agent` | pip scripts dir not on PATH (common on macOS) | See install step 1 — add `$(python3 -m site --user-base)/bin` to PATH, or use the alias workaround |
+| `command not found: skilljar-agent` | pip scripts dir not on PATH (common on macOS/Linux) | See install step 1 — add user-base `bin` **and** `$(python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))')` to PATH, or use the `python3 -m cli` / alias workaround |
 | `KeyError: 'SKILLJAR_API_KEY'` | Env vars not loaded | Export them or use `python-dotenv` |
 | `httpx.HTTPStatusError: 401` | Bad SkillJar key | Regenerate in SkillJar dashboard |
 | `anthropic.AuthenticationError` | Bad Anthropic key (CLI only) | Check key at console.anthropic.com |
-| `json.JSONDecodeError` on plan | LLM returned non-JSON (CLI only) | Retry, or check `prompts/curriculum_plan.md` |
-| MCP tools not showing in IDE | Server not running or config wrong | Test with `python mcp_server.py` first |
+| `json.JSONDecodeError` / plan errors (CLI only) | LLM returned non-JSON or invalid schema | Retry; CLI surfaces **`PlanGenerationError`** with a short message. Check `prompts/curriculum_plan.md` |
+| MCP tools not showing / `Connection closed` (Cursor) | Bad MCP config, missing key, or **stdout** polluted | Use [`.cursor/mcp.json`](.cursor/mcp.json) + `.env`; ensure `PYTHONPATH` includes `src`; server logs only to **stderr** before `mcp.run()`. Reload MCP in Settings |
+| `401` from tools | SkillJar key missing in MCP process | Confirm `.env` has `SKILLJAR_API_KEY=...` (no spaces around `=`) and `envFile` path in `mcp.json` |
 | Stale course results | Cache serving old data | Run with `--clear-cache` |
 | No fuzzy matches found | Query too specific | Broaden query or lower threshold to `0.2` |
 | `ModuleNotFoundError` | Package not installed | Re-run `pip install -e .` from the repo root |
