@@ -145,6 +145,46 @@ register_my_domain(mcp, get_client)
 
 That's it. Restart your MCP server and the new tools are available.
 
+## Batch lesson manifest (`batch_create_lessons`)
+
+The MCP tool **`batch_create_lessons`** takes `course_id` and **`lessons_json`**: a string containing a **JSON array**. Content workflows can keep that array in a file (e.g. `lessons.json`) on the machine where the MCP server runs; your IDE agent reads the file and passes its contents as `lessons_json`.
+
+### Format
+
+- The file body must be a **JSON array** (`[ ... ]`), not an object wrapper.
+- Each element is one lesson object:
+
+| Field | Required | Description |
+|--------|----------|-------------|
+| `title` | Yes | Lesson title in SkillJar. |
+| `file_path` | One of `file_path` **or** `html_content` | Path to a `.html` / `.htm` file. Expanded with `~`. Relative paths are resolved from the **MCP server process working directory** (often your repo root in Cursor); prefer **absolute paths** to avoid surprises. |
+| `html_content` | One of `file_path` **or** `html_content` | Inline HTML body. Use for small snippets; large lessons should use `file_path`. |
+
+Order in the array is the order lessons are created.
+
+### Example `lessons.json`
+
+```json
+[
+  {
+    "title": "Chapter 1 — Introduction",
+    "file_path": "/Users/you/projects/postair-lessons/01-intro.html"
+  },
+  {
+    "title": "Chapter 2 — Workspace setup",
+    "file_path": "/Users/you/projects/postair-lessons/02-workspace.html"
+  },
+  {
+    "title": "Quick recap",
+    "html_content": "<p>Review the key points from this module.</p>"
+  }
+]
+```
+
+### Prompt template
+
+See [`prompts/batch_create_lessons.md`](prompts/batch_create_lessons.md) for copy-paste instructions to use with your IDE agent (confirm before write, validate manifest, then call the tool).
+
 ## SkillJar API Reference
 
 Auth: HTTP Basic — API key as username, empty password. Base URL: `https://api.skilljar.com/v1` (override with `SKILLJAR_DOMAIN`).

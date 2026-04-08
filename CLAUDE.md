@@ -31,6 +31,7 @@ skilljar-agent/
 │   ├── curriculum_plan.md       # System prompt for CLI planner (version-controlled)
 │   ├── course_summary.md        # MCP: search + get_course_content summary
 │   ├── create_lesson.md         # MCP: create_lesson_from_file (write)
+│   ├── batch_create_lessons.md  # MCP: batch_create_lessons from folder or inline HTML (write)
 │   └── create_course.md         # MCP: create_course / update_course (write)
 └── src/
     ├── cli/
