@@ -143,7 +143,7 @@ You should see (on **stderr**; stdout stays free for MCP JSON-RPC):
    ├── analytics   (get_enrollment_stats)
    ├── enrollment  (lookup_user, enroll_user)
    ├── classroom   (check_user_access)
-   └── content     (create_course, create_lesson_from_html, create_lesson_from_file, batch_create_lessons, update_lesson_content)
+   └── content     (create_course, update_course, create_lesson_from_html, create_lesson_from_file, batch_create_lessons, update_lesson_content)
 
 ✅ MCP server is running. Waiting for tool calls...
    (stdio JSON-RPC on stdout; logs here on stderr. Ctrl+C to stop)
@@ -200,7 +200,8 @@ All **five** tool groups are mounted automatically:
 | `lookup_user` | Enrollment | Find a user by email |
 | `enroll_user` | Enrollment | Enroll a user in a course (⚠️ write) |
 | `check_user_access` | Classroom | Check if a learner can access a course |
-| `create_course` | Content | Create a course (⚠️ write) |
+| `create_course` | Content | Create a course with short/long description (⚠️ write) |
+| `update_course` | Content | Update course metadata (⚠️ write) |
 | `create_lesson_from_html` | Content | Create lesson from HTML (⚠️ write) |
 | `create_lesson_from_file` | Content | Create lesson from file (⚠️ write) |
 | `batch_create_lessons` | Content | Batch create lessons (⚠️ write) |

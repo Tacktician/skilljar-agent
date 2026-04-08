@@ -28,7 +28,10 @@ skilljar-agent/
 ├── docs/
 │   └── skilljar-api.yaml        # Bundled SkillJar OpenAPI (reference)
 ├── prompts/
-│   └── curriculum_plan.md       # System prompt for CLI planner (version-controlled)
+│   ├── curriculum_plan.md       # System prompt for CLI planner (version-controlled)
+│   ├── course_summary.md        # MCP: search + get_course_content summary
+│   ├── create_lesson.md         # MCP: create_lesson_from_file (write)
+│   └── create_course.md         # MCP: create_course / update_course (write)
 └── src/
     ├── cli/
     │   ├── __init__.py          # Main CLI (argparse, --test, --new, --json, etc.)
@@ -91,14 +94,14 @@ The CLI has a `--clear-cache` flag. Programmatically: `client.clear_cache()`.
 
 ### Write operations require confirmation
 
-Tools in `content/`, `enrollment/`, and `classroom/` that modify data have ⚠️ flags in their docstrings (e.g. `create_course`, `enroll_user`). This tells the host agent to confirm with the user before executing. This is a convention — the MCP server doesn't enforce it.
+Tools in `content/`, `enrollment/`, and `classroom/` that modify data have ⚠️ flags in their docstrings (e.g. `create_course`, `update_course`, `enroll_user`). This tells the host agent to confirm with the user before executing. This is a convention — the MCP server doesn't enforce it.
 
 ## Tool Group Status
 
 | Domain | Status | Tools | Notes |
 |---|---|---|---|
 | curriculum | ✅ Implemented | `search_courses`, `get_course_content`, `get_course_catalog` | Read-only. `get_course_content` builds course description from `short_description` / `long_description_html` (and legacy `description` if present) |
-| content | ✅ Implemented | `create_course`, `create_lesson_from_html`, `create_lesson_from_file`, `batch_create_lessons`, `update_lesson_content` | ⚠️ All write ops. Needs live testing. |
+| content | ✅ Implemented | `create_course`, `update_course`, `create_lesson_from_html`, `create_lesson_from_file`, `batch_create_lessons`, `update_lesson_content` | ⚠️ All write ops. Needs live testing. |
 | analytics | 🔧 Starter | `get_enrollment_stats` | Read-only. Calls real API, needs testing against live data |
 | enrollment | 🔧 Starter | `lookup_user`, `enroll_user` | `enroll_user` is a write op |
 | classroom | 🔧 Starter | `check_user_access` | For ILT facilitators, needs `reset_password`, `provision_sandbox` |
@@ -122,9 +125,9 @@ Key endpoints used (see also `docs/skilljar-api.yaml`):
 | Endpoint | Method | Used by |
 |---|---|---|
 | `/v1/courses` | GET | curriculum (catalog, search) |
-| `/v1/courses` | POST | content (`create_course` — uses `short_description`, `enforce_sequential_navigation`, `title`) |
+| `/v1/courses` | POST | content (`create_course` — `title`, `short_description`, optional `long_description_html`, `enforce_sequential_navigation`) |
 | `/v1/courses/{id}` | GET | curriculum (course detail) |
-| `/v1/courses/{id}` | PUT | content (`update_course`; maps `description` → `short_description` in the client) |
+| `/v1/courses/{id}` | PUT | content (`update_course` MCP tool; optional `title`, `description` → `short_description`, `long_description_html`, `enforce_sequential_navigation`) |
 | `/v1/lessons` | GET | curriculum (`list_lessons` — requires `course_id` query param) |
 | `/v1/lessons` | POST | content (`create_lesson` — `content_html`, `type`, `order`, `course_id`, `title`) |
 | `/v1/lessons/{id}` | GET | curriculum (`get_lesson` — pass `course_id` query param) |

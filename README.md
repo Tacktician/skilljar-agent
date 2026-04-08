@@ -7,7 +7,7 @@ A modular platform agent for SkillJar — curriculum planning, enrollment analyt
 | Domain | Status | Tools | Description |
 |---|---|---|---|
 | **Curriculum** | ✅ Implemented | `search_courses`, `get_course_content`, `get_course_catalog` | Fuzzy course matching; lesson scraping merges **all** lessons with `content-items` when present (not only modular types), catalog browsing |
-| **Content** | ✅ Implemented | `create_course`, `create_lesson_from_html`, `create_lesson_from_file`, `batch_create_lessons`, `update_lesson_content` | Course/lesson writes (⚠️ confirm before use) |
+| **Content** | ✅ Implemented | `create_course`, `update_course`, `create_lesson_from_html`, `create_lesson_from_file`, `batch_create_lessons`, `update_lesson_content` | Course/lesson writes (⚠️ confirm before use) |
 | **Analytics** | 🔧 Starter | `get_enrollment_stats` | Enrollment counts, completion rates |
 | **Enrollment** | 🔧 Starter | `lookup_user`, `enroll_user` | User lookup, course enrollment (write ops) |
 | **Classroom** | 🔧 Starter | `check_user_access` | ILT support — access checks, sandbox troubleshooting |
@@ -155,7 +155,7 @@ The client matches the [published API](https://api.skilljar.com/docs/) / `docs/s
 |---|---|
 | `GET /v1/courses` | List courses (paginated) |
 | `GET /v1/courses/{id}` | Course metadata (`short_description`, `long_description_html`, …) |
-| `POST /v1/courses` | Create course (`short_description`, `title`, `enforce_sequential_navigation`, …) |
+| `POST /v1/courses` | Create course (`title`, `short_description`, optional `long_description_html`, `enforce_sequential_navigation`, …) |
 | `GET /v1/lessons?course_id={id}` | Lesson list for a course |
 | `GET /v1/lessons/{lesson_id}?course_id={id}` | Lesson detail (`content_html`, `type`, …) |
 | `GET /v1/lessons/{lesson_id}/content-items` | Merged into lesson HTML for scraping (all lesson types when items exist) |
