@@ -18,7 +18,7 @@ Using the SkillJar MCP tools.
 **Rules:**
 
 - Do **not** edit or rewrite the HTML file unless I ask.
-- The file must be **`.html` or `.htm`** (tool requirement).
+- The file must be **`.html`** (tool requirement).
 - Return the tool’s JSON response as-is (`success`, `lesson_id`, or `error`).
 
 If the path is wrong or the file is missing, report the error and stop without guessing a different path.
