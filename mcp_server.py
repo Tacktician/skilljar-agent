@@ -87,7 +87,7 @@ if __name__ == "__main__":
     _stderr("   ├── enrollment  (lookup_user, enroll_user)")
     _stderr("   ├── classroom   (check_user_access)")
     _stderr(
-        "   └── content     (create_course, create_lesson_from_html, "
+        "   └── content     (create_course, update_course, create_lesson_from_html, "
         "create_lesson_from_file, batch_create_lessons, update_lesson_content)"
     )
 

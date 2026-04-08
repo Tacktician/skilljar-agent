@@ -16,25 +16,88 @@ def register(mcp, get_client):
     """Mount content management tools onto the MCP server."""
 
     @mcp.tool()
-    def create_course(title: str, description: str = "") -> str:
+    def create_course(
+        title: str,
+        description: str = "",
+        long_description_html: str = "",
+        enforce_sequential_navigation: bool = False,
+    ) -> str:
         """Create a new course in SkillJar.
 
         ⚠️ WRITE operation. Confirm with the user before executing.
 
         Args:
             title: Course title (e.g. "Introduction to API Mocking")
-            description: Course description/summary
+            description: Short description / summary (maps to API `short_description`)
+            long_description_html: Optional full course description as HTML (`long_description_html`)
+            enforce_sequential_navigation: When True, learners must complete lessons in order
 
         Returns the new course ID and metadata.
         """
         client = get_client()
+        extra = {}
+        if (long_description_html or "").strip():
+            extra["long_description_html"] = long_description_html.strip()
         try:
-            course = client.create_course(title=title, description=description)
+            course = client.create_course(
+                title=title,
+                description=description,
+                enforce_sequential_navigation=enforce_sequential_navigation,
+                **extra,
+            )
             return json.dumps({
                 "success": True,
                 "course_id": course["id"],
                 "title": course.get("title", ""),
                 "message": f"Course '{title}' created successfully.",
+            }, indent=2)
+        except Exception as e:
+            return json.dumps({"success": False, "error": str(e)})
+
+    @mcp.tool()
+    def update_course(
+        course_id: str,
+        title: str = "",
+        description: str = "",
+        long_description_html: str = "",
+        enforce_sequential_navigation: bool | None = None,
+    ) -> str:
+        """Update an existing course's metadata in SkillJar.
+
+        ⚠️ WRITE operation. Confirm with the user before executing.
+
+        Args:
+            course_id: The course to update
+            title: New title (only sent if non-empty)
+            description: New short description (only sent if non-empty; maps to `short_description`)
+            long_description_html: New long description HTML (only sent if non-empty)
+            enforce_sequential_navigation: Set sequential navigation on or off; omit by leaving default unset
+
+        Provide at least one updatable field besides course_id. Empty strings are ignored (field left unchanged).
+        """
+        client = get_client()
+        fields: dict = {}
+        if (title or "").strip():
+            fields["title"] = title.strip()
+        if (description or "").strip():
+            fields["description"] = description.strip()
+        if (long_description_html or "").strip():
+            fields["long_description_html"] = long_description_html.strip()
+        if enforce_sequential_navigation is not None:
+            fields["enforce_sequential_navigation"] = enforce_sequential_navigation
+        if not fields:
+            return json.dumps({
+                "success": False,
+                "error": "Nothing to update. Provide at least one of: title, description, long_description_html, or enforce_sequential_navigation.",
+            })
+        try:
+            course = client.update_course(course_id, **fields)
+            return json.dumps({
+                "success": True,
+                "course_id": course_id,
+                "title": course.get("title", ""),
+                "updated_fields": list(fields.keys()),
+                "message": f"Course {course_id} updated.",
             }, indent=2)
         except Exception as e:
             return json.dumps({"success": False, "error": str(e)})
